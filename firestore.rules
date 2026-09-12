@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'email', 'nameOrInitial', 'role']) &&
+             data.id is string &&
+             data.email is string &&
+             data.nameOrInitial is string &&
+             data.role in ['STUDENT', 'UKS'];
+    }
+
+    function isValidNutritionCheck(data) {
+      return data.keys().hasAll(['studentId', 'studentName', 'weightKg', 'heightCm', 'bmi', 'bmiCategory', 'riskCategory', 'timestamp']) &&
+             data.studentId is string &&
+             data.studentName is string &&
+             data.weightKg is number &&
+             data.heightCm is number &&
+             data.bmi is number &&
+             data.bmiCategory is string &&
+             data.riskCategory is string &&
+             data.timestamp is int;
+    }
+
+    function isValidDailyCheck(data) {
+      return data.keys().hasAll(['studentId', 'dateString', 'timestamp']) &&
+             data.studentId is string &&
+             data.dateString is string &&
+             data.timestamp is int;
+    }
+
+    function isValidFollowUp(data) {
+      return data.keys().hasAll(['studentId', 'officerName', 'note', 'timestamp']) &&
+             data.studentId is string &&
+             data.officerName is string &&
+             data.note is string &&
+             data.timestamp is int;
+    }
+
+    // Koleksi Pengguna (Siswa & UKS)
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if isValidUser(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Koleksi Cek Gizi Siswa (Sinkronisasi Antar-Perangkat ke Dashboard UKS)
+    match /nutrition_checks/{checkId} {
+      allow read: if true;
+      allow create, update: if isValidNutritionCheck(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Koleksi Cek Kebiasaan Harian
+    match /daily_checks/{checkId} {
+      allow read: if true;
+      allow create, update: if isValidDailyCheck(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Koleksi Follow Up Petugas UKS
+    match /uks_follow_ups/{followUpId} {
+      allow read: if true;
+      allow create, update: if isValidFollowUp(request.resource.data);
+      allow delete: if false;
+    }
+  }
+}
