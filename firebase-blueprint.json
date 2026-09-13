@@ -1,0 +1,166 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Profil pengguna NutriMind dengan pemisahan peran Siswa dan Guru",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Alamat email pengguna"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Nama lengkap pengguna"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["SISWA", "GURU"],
+          "description": "Peran pengguna di aplikasi (SISWA atau GURU)"
+        },
+        "nisn": {
+          "type": "string",
+          "description": "Nomor Induk Siswa Nasional (khusus Siswa)"
+        },
+        "kelas": {
+          "type": "string",
+          "description": "Kelas/Rombel siswa atau guru wali kelas"
+        },
+        "nip": {
+          "type": "string",
+          "description": "Nomor Induk Pegawai (khusus Guru/Pembina UKS)"
+        },
+        "schoolName": {
+          "type": "string",
+          "description": "Nama madrasah/sekolah"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu akun dibuat"
+        }
+      },
+      "required": ["uid", "email", "displayName", "role"]
+    },
+    "NutritionCheck": {
+      "title": "NutritionCheck",
+      "description": "Data pemeriksaan dan deteksi status gizi siswa",
+      "type": "object",
+      "properties": {
+        "checkId": {
+          "type": "string",
+          "description": "ID unik pemeriksaan"
+        },
+        "studentId": {
+          "type": "string",
+          "description": "UID siswa pemilik data"
+        },
+        "studentName": {
+          "type": "string",
+          "description": "Nama siswa"
+        },
+        "kelas": {
+          "type": "string",
+          "description": "Kelas siswa"
+        },
+        "gender": {
+          "type": "string",
+          "enum": ["L", "P"],
+          "description": "Jenis kelamin (L/P)"
+        },
+        "heightCm": {
+          "type": "number",
+          "description": "Tinggi badan dalam cm"
+        },
+        "weightKg": {
+          "type": "number",
+          "description": "Berat badan dalam kg"
+        },
+        "bmi": {
+          "type": "number",
+          "description": "Indeks Massa Tubuh"
+        },
+        "statusGizi": {
+          "type": "string",
+          "description": "Status gizi (Normal, Kurus, Gemuk, Obesitas, Stunting)"
+        },
+        "riskLevel": {
+          "type": "string",
+          "enum": ["RENDAH", "SEDANG", "TINGGI"],
+          "description": "Tingkat risiko kesehatan/gizi"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pemeriksaan gizi"
+        }
+      },
+      "required": ["checkId", "studentId", "studentName", "statusGizi", "riskLevel"]
+    },
+    "UksFollowUp": {
+      "title": "UksFollowUp",
+      "description": "Catatan intervensi atau tindak lanjut UKS oleh Guru terhadap siswa berisiko",
+      "type": "object",
+      "properties": {
+        "followUpId": {
+          "type": "string",
+          "description": "ID unik tindak lanjut"
+        },
+        "studentId": {
+          "type": "string",
+          "description": "UID siswa yang diintervensi"
+        },
+        "studentName": {
+          "type": "string",
+          "description": "Nama siswa"
+        },
+        "teacherId": {
+          "type": "string",
+          "description": "UID guru/pembina UKS yang menangani"
+        },
+        "teacherName": {
+          "type": "string",
+          "description": "Nama guru"
+        },
+        "interventionType": {
+          "type": "string",
+          "description": "Jenis intervensi (Konseling, Pemberian TTD, Rujukan Puskesmas)"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Catatan hasil pemantauan"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["TERJADWAL", "PROSES", "SELESAI"],
+          "description": "Status intervensi"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu terakhir diperbarui"
+        }
+      },
+      "required": ["followUpId", "studentId", "teacherId", "interventionType", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Data profil pengguna dengan peran Siswa atau Guru"
+    },
+    "/nutrition_checks/{checkId}": {
+      "schema": "NutritionCheck",
+      "description": "Data deteksi gizi siswa yang dapat diakses oleh siswa bersangkutan dan guru"
+    },
+    "/uks_follow_ups/{followUpId}": {
+      "schema": "UksFollowUp",
+      "description": "Catatan tindak lanjut UKS yang dikelola oleh Guru/Pembina UKS"
+    }
+  }
+}

@@ -1,0 +1,68 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isTeacher() {
+      return isSignedIn() && getUserData().role == 'GURU';
+    }
+
+    function isStudent() {
+      return isSignedIn() && getUserData().role == 'SISWA';
+    }
+
+    // Koleksi User Profile dengan Role-based Access Control
+    match /users/{userId} {
+      // Siswa bisa membaca profilnya sendiri; Guru bisa membaca profil seluruh siswa & guru untuk monitoring
+      allow read: if isOwner(userId) || isTeacher();
+
+      // Pengguna baru bisa membuat profil dengan ID auth-nya sendiri dan memilih role SISWA atau GURU
+      allow create: if isOwner(userId)
+                    && request.resource.data.uid == userId
+                    && request.resource.data.role in ['SISWA', 'GURU'];
+
+      // Pemilik akun bisa mengupdate informasi profilnya
+      allow update: if isOwner(userId)
+                    && request.resource.data.uid == userId;
+
+      allow delete: if false;
+    }
+
+    // Koleksi Pemeriksaan Gizi Siswa
+    match /nutrition_checks/{checkId} {
+      // Siswa hanya bisa membaca hasil gizinya sendiri; Guru bisa membaca seluruh data pemeriksaan siswa
+      allow read: if isSignedIn() && (resource.data.studentId == request.auth.uid || isTeacher());
+
+      // Siswa bisa mencatat hasil gizinya sendiri; Guru juga bisa mencatatkan data siswa binaannya
+      allow create: if isSignedIn()
+                    && (request.resource.data.studentId == request.auth.uid || isTeacher());
+
+      allow update: if isSignedIn()
+                    && (resource.data.studentId == request.auth.uid || isTeacher());
+
+      allow delete: if isTeacher();
+    }
+
+    // Koleksi Tindak Lanjut UKS
+    match /uks_follow_ups/{followUpId} {
+      // Siswa yang bersangkutan bisa membaca catatan tindak lanjutnya; Guru bisa membaca semua catatan
+      allow read: if isSignedIn() && (resource.data.studentId == request.auth.uid || isTeacher());
+
+      // Hanya Guru / Pembina UKS yang berhak membuat atau memperbarui catatan tindak lanjut
+      allow create, update, delete: if isTeacher();
+    }
+  }
+}
