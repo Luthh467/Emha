@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import com.example.data.local.AppDao
 import com.example.data.local.AppDatabase
+import com.example.data.local.PrepopulateData
 import com.example.data.model.ChatMessage
 import com.example.data.model.DailyCheckEntity
 import com.example.data.model.EducationArticle
@@ -13,14 +14,35 @@ import com.example.data.model.UksFollowUpEntity
 import com.example.data.model.UserEntity
 import com.example.data.remote.FoodAnalysisResponse
 import com.example.data.remote.GeminiService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class AppRepository(context: Context) {
     private val database = AppDatabase.getDatabase(context)
     private val dao: AppDao = database.appDao()
+
+    init {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                if (dao.getArticleCount() == 0) {
+                    for (user in PrepopulateData.sampleUsers) {
+                        dao.insertUser(user)
+                    }
+                    for (check in PrepopulateData.sampleNutritionChecks) {
+                        dao.insertNutritionCheck(check)
+                    }
+                    dao.insertArticles(PrepopulateData.articles)
+                }
+            } catch (e: Throwable) {
+                android.util.Log.e("NutriMindApp", "Initial data setup error: ${e.message}", e)
+            }
+        }
+    }
 
     private val _currentUser = MutableStateFlow<UserEntity?>(null)
     val currentUser: StateFlow<UserEntity?> = _currentUser.asStateFlow()

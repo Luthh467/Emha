@@ -4,16 +4,12 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.model.DailyCheckEntity
 import com.example.data.model.EducationArticle
 import com.example.data.model.FoodScanEntity
 import com.example.data.model.NutritionCheckEntity
 import com.example.data.model.UksFollowUpEntity
 import com.example.data.model.UserEntity
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 @Database(
     entities = [
@@ -41,24 +37,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "nutrimind_database"
                 )
-                    .addCallback(object : Callback() {
-                        override fun onCreate(db: SupportSQLiteDatabase) {
-                            super.onCreate(db)
-                            CoroutineScope(Dispatchers.IO).launch {
-                                val dao = getDatabase(context).appDao()
-                                // Prepopulate sample users
-                                for (user in PrepopulateData.sampleUsers) {
-                                    dao.insertUser(user)
-                                }
-                                // Prepopulate sample nutrition checks
-                                for (check in PrepopulateData.sampleNutritionChecks) {
-                                    dao.insertNutritionCheck(check)
-                                }
-                                // Prepopulate education articles
-                                dao.insertArticles(PrepopulateData.articles)
-                            }
-                        }
-                    })
+                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance
