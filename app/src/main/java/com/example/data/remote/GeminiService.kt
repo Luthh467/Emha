@@ -48,7 +48,8 @@ data class FoodAnalysisResponse(
     val calciumStatus: String = "Cukup untuk Tulang",
     val vitaminCStatus: String = "Optimal",
     val hydrationBeverageAdvice: String = "Dampingi santapan dengan 1-2 gelas air putih. Hindari minum es teh manis atau teh pekat segera setelah makan agar penyerapan zat besi tidak terhambat.",
-    val items: List<DetectedFoodItem> = emptyList()
+    val items: List<DetectedFoodItem> = emptyList(),
+    val analysisEngine: String = "Google Gemini AI (Cloud)"
 )
 
 object GeminiService {
@@ -77,13 +78,26 @@ object GeminiService {
         return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
     }
 
-    private fun getApiKey(): String {
+    @Volatile
+    private var customApiKey: String? = null
+
+    fun setCustomApiKey(key: String) {
+        customApiKey = key.trim()
+    }
+
+    fun getApiKey(): String {
+        val custom = customApiKey
+        if (!custom.isNullOrBlank()) return custom
         return try {
             val key = BuildConfig.GEMINI_API_KEY
             if (key.isNullOrBlank() || key == "MY_GEMINI_API_KEY") "" else key
         } catch (e: Throwable) {
             ""
         }
+    }
+
+    fun isGeminiConfigured(): Boolean {
+        return getApiKey().isNotBlank()
     }
 
     /**
