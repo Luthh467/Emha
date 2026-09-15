@@ -47,10 +47,12 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -125,6 +127,9 @@ fun FoodScanScreen(
     var isAnalyzing by remember { mutableStateOf(false) }
     var analysisResult by remember { mutableStateOf<FoodAnalysisResponse?>(null) }
     var isSaved by remember { mutableStateOf(false) }
+
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+    var apiKeyInput by remember { mutableStateOf(GeminiService.getApiKey()) }
 
     var tempPhotoFile by remember { mutableStateOf<File?>(null) }
 
@@ -275,15 +280,114 @@ fun FoodScanScreen(
                 )
             }
 
-            OutlinedButton(
-                onClick = onNavigateToHistory,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.testTag("nav_history_button")
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.History, contentDescription = null, tint = EmeraldDark, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Riwayat", fontSize = 12.sp, color = EmeraldDark, fontWeight = FontWeight.SemiBold)
+                OutlinedButton(
+                    onClick = {
+                        apiKeyInput = GeminiService.getApiKey()
+                        showApiKeyDialog = true
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Default.Settings, contentDescription = "Pengaturan AI", tint = EmeraldDark, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("AI Engine", fontSize = 11.sp, color = EmeraldDark, fontWeight = FontWeight.SemiBold)
+                }
+
+                OutlinedButton(
+                    onClick = onNavigateToHistory,
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("nav_history_button")
+                ) {
+                    Icon(Icons.Default.History, contentDescription = null, tint = EmeraldDark, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Riwayat", fontSize = 11.sp, color = EmeraldDark, fontWeight = FontWeight.SemiBold)
+                }
             }
+        }
+
+        if (showApiKeyDialog) {
+            AlertDialog(
+                onDismissRequest = { showApiKeyDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = EmeraldDark, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Pengaturan Mesin AI Foto", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = "NutriMind AI bekerja dengan sistem Hybrid Dual-Engine:\n" +
+                                    "• On-Device Vision: Otomatis mendeteksi makanan dari foto kamera secara langsung bahkan saat offline tanpa kuota.\n" +
+                                    "• Gemini Multimodal (Cloud): Analisis gambar mendalam saat kunci Gemini API terpasang.",
+                            fontSize = 12.sp,
+                            color = Color(0xFF475569),
+                            lineHeight = 17.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Kunci Gemini API (Opsional):",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F172A)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = apiKeyInput,
+                            onValueChange = { apiKeyInput = it },
+                            placeholder = { Text("Tempel API Key Google AI Studio di sini", fontSize = 11.sp) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                        )
+                        if (apiKeyInput.isNotBlank()) {
+                            Text(
+                                text = "Status: Gemini Cloud Multimodal Vision Aktif",
+                                fontSize = 11.sp,
+                                color = Color(0xFF16A34A),
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        } else {
+                            Text(
+                                text = "Status: NutriMind On-Device Computer Vision Aktif (Otomatis)",
+                                fontSize = 11.sp,
+                                color = EmeraldDark,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            GeminiService.saveCustomApiKey(context, apiKeyInput)
+                            showApiKeyDialog = false
+                            Toast.makeText(context, "Pengaturan AI berhasil disimpan!", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldDark),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Simpan", fontSize = 12.sp)
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = { showApiKeyDialog = false },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Tutup", fontSize = 12.sp)
+                    }
+                }
+            )
         }
 
         Spacer(modifier = Modifier.height(14.dp))
@@ -943,6 +1047,67 @@ fun FoodScanScreen(
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (res.balanceAssessment.contains("Seimbang", ignoreCase = true)) Color(0xFF16A34A) else HealthAmber
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Engine Badge
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFF1F5F9), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = EmeraldDark,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Engine: ${res.analysisEngine}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = EmeraldDark
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Card Sorotan Makanan Terdeteksi
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFECFDF5)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA7F3D0))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Restaurant,
+                                    contentDescription = null,
+                                    tint = EmeraldDark,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Makanan & Hidangan Terdeteksi:",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = EmeraldDark
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = res.detectedFoods,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A),
+                                lineHeight = 18.sp
                             )
                         }
                     }

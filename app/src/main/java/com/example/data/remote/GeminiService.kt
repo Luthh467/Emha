@@ -1,8 +1,10 @@
 package com.example.data.remote
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.util.Base64
 import com.example.BuildConfig
+import com.example.data.FoodVisionAnalyzer
 import com.example.data.model.ChatMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -80,6 +82,29 @@ object GeminiService {
 
     @Volatile
     private var customApiKey: String? = null
+
+    fun initialize(context: Context) {
+        try {
+            val sp = context.getSharedPreferences("nutrimind_gemini_prefs", Context.MODE_PRIVATE)
+            val savedKey = sp.getString("custom_api_key", null)
+            if (!savedKey.isNullOrBlank()) {
+                customApiKey = savedKey.trim()
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
+    fun saveCustomApiKey(context: Context, key: String) {
+        val trimmed = key.trim()
+        customApiKey = if (trimmed.isNotBlank()) trimmed else null
+        try {
+            val sp = context.getSharedPreferences("nutrimind_gemini_prefs", Context.MODE_PRIVATE)
+            sp.edit().putString("custom_api_key", customApiKey).apply()
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
 
     fun setCustomApiKey(key: String) {
         customApiKey = key.trim()
@@ -323,257 +348,259 @@ object GeminiService {
         mealType: String = "Makan Utama",
         studentNote: String = ""
     ): FoodAnalysisResponse = withContext(Dispatchers.IO) {
-        val apiKey = getApiKey()
-        if (apiKey.isBlank() || bitmap == null) {
+        if (bitmap == null) {
             return@withContext getSampleFoodAnalysis(mealType + " " + studentNote)
         }
 
-        try {
-            val base64Image = bitmapToBase64(bitmap)
+        val apiKey = getApiKey()
+        if (apiKey.isNotBlank()) {
+            try {
+                val base64Image = bitmapToBase64(bitmap)
 
-            val prompt = """
-                Analisis foto makanan/minuman siswa madrasah ini secara komprehensif untuk sistem skrining gizi 'NutriMind AI'.
-                Waktu santap yang dipilih siswa: $mealType.
-                ${if (studentNote.isNotBlank()) "Catatan tambahan dari siswa: '$studentNote'." else ""}
-                Periksa makanan nyata di foto piring/wadah. Jawab HANYA dalam JSON dengan struktur:
-                {
-                  "detectedFoods": "Daftar spesifik makanan, lauk, minuman, atau jajanan yang tampak di foto",
-                  "foodCategory": "Menu Makanan Utama (Bekal) / Jajanan Kantin / Kudapan Sehat / Minuman / Bukan Makanan",
-                  "carbsSource": "Nama sumber karbohidrat (contoh: Nasi putih ~1 centong 150g, lontong, kentang, mie, atau 'Tidak ada')",
-                  "proteinSource": "Nama sumber protein hewani/nabati (contoh: Ayam kecap, telur dadar, tempe, tahu, atau 'Tidak ada')",
-                  "vegFruitSource": "Komponen sayur atau buah (contoh: Sayur sop wortel, lalapan mentimun, buah pisang, atau 'Belum ada')",
-                  "approxNutrients": "Ringkasan energi & makronutrien (contoh: Est. 520 kkal | K: 65g, P: 22g, L: 15g, Serat: 5g)",
-                  "balanceAssessment": "Seimbang (Sesuai Isi Piringku) / Cukup Seimbang / Kurang Sayur & Buah / Tinggi Minyak & Gula",
-                  "educationalFeedback": "Edukasi ramah siswa madrasah sesuai pedoman Isi Piringku Kemenkes. Jelaskan manfaat gizi untuk energi belajar.",
-                  "estimatedCalories": 520,
-                  "carbGrams": 65,
-                  "proteinGrams": 22,
-                  "fatGrams": 15,
-                  "fiberGrams": 5,
-                  "plateScore": 85,
-                  "ironAssessment": "Kaya Zat Besi / Cukup / Rendah Zat Besi",
-                  "ironAdvice": "Saran zat besi untuk mencegah anemia dan meningkatkan konsentrasi hafalan/belajar",
-                  "oilSugarAssessment": "Rendah Lemak / Minyak Wajar / Tinggi Gorengan & Minyak / Tinggi Gula Tambahan",
-                  "actionableImprovement": "Satu langkah konkrit perbaikan piring berikutnya (contoh: Tambahkan 1 buah potong untuk melengkapi vitamin C)",
-                  "alertnessLevel": "Stabil & Fokus / Sedang / Rawan Mengantuk (Food Coma)",
-                  "alertnessDetail": "Penjelasan ilmiah kaitan menu ini dengan kesiapan dan fokus belajar di kelas madrasah",
-                  "satietyHours": 4,
-                  "calciumStatus": "Optimal / Cukup / Perlu Ditingkatkan",
-                  "vitaminCStatus": "Optimal / Cukup / Kurang Sayur & Buah",
-                  "hydrationBeverageAdvice": "Saran minuman pendamping sehat yang mendukung penyerapan zat gizi",
-                  "items": [
-                    {"name": "Nasi Putih Pulen", "portion": "1 centong (~150g)", "calories": 195, "group": "Karbohidrat Pokok"},
-                    {"name": "Lauk Pauk", "portion": "1 porsi (~80g)", "calories": 150, "group": "Lauk Hewani/Nabati"}
-                  ]
-                }
-            """.trimIndent()
+                val prompt = """
+                    Identifikasi dan analisis makanan serta minuman yang tampak pada foto piring/wadah makanan siswa madrasah ini untuk skrining gizi 'NutriMind AI'.
+                    Waktu santap: $mealType.
+                    ${if (studentNote.isNotBlank()) "Keterangan/catatan dari siswa: '$studentNote'." else ""}
 
-            val requestJson = JSONObject().apply {
-                val contentsArray = JSONArray()
-                val contentObj = JSONObject()
-                val partsArray = JSONArray()
+                    PENTING:
+                    1. Identifikasi secara spesifik dan akurat nama-nama makanan nyata yang tampak pada foto (contoh: nasi putih, ayam goreng/bakar, tahu, tempe, sayur sop, tumis kangkung, telur, buah, susu, dsb).
+                    2. Estimasi takaran porsi, kalori total, dan makronutrien (karbohidrat, protein, lemak, serat).
+                    3. Evaluasi kesesuaian dengan pedoman gizi seimbang 'Isi Piringku' Kemenkes RI (50% karbohidrat + protein, 50% sayuran + buah).
+                    4. Berikan edukasi gizi madrasah yang ramah, sopan, tanpa diagnosis medis.
 
-                partsArray.put(JSONObject().apply { put("text", prompt) })
-                partsArray.put(JSONObject().apply {
-                    val inlineData = JSONObject().apply {
-                        put("mimeType", "image/jpeg")
-                        put("data", base64Image)
+                    Jawab HANYA dalam format JSON valid dengan skema:
+                    {
+                      "detectedFoods": "Nama-nama makanan, lauk, sayur, buah, minuman yang tampak di foto",
+                      "foodCategory": "Menu Piring Seimbang / Bekal Nasi & Lauk / Jajanan Kantin / Kudapan Sehat / Minuman",
+                      "carbsSource": "Nama sumber karbohidrat di foto (misal: Nasi putih ~1 centong 150g, atau 'Tidak ada')",
+                      "proteinSource": "Nama sumber protein hewani/nabati di foto (misal: Ayam goreng & tempe, atau 'Tidak ada')",
+                      "vegFruitSource": "Sayuran atau buah di foto (misal: Sayur sop & pisang, atau 'Belum ada')",
+                      "approxNutrients": "Est. 480 kkal | K: 60g, P: 20g, L: 14g, Serat: 5g",
+                      "balanceAssessment": "Sangat Seimbang / Cukup Seimbang / Kurang Sayur & Buah / Tinggi Minyak & Gula",
+                      "educationalFeedback": "Edukasi ramah siswa madrasah sesuai panduan Isi Piringku Kemenkes",
+                      "estimatedCalories": 480,
+                      "carbGrams": 60,
+                      "proteinGrams": 20,
+                      "fatGrams": 14,
+                      "fiberGrams": 5,
+                      "plateScore": 82,
+                      "ironAssessment": "Kaya Zat Besi / Cukup / Rendah Zat Besi",
+                      "ironAdvice": "Saran zat besi dan vitamin C untuk mencegah anemia santri",
+                      "oilSugarAssessment": "Kadar Minyak Wajar / Rendah Minyak / Tinggi Gorengan & Minyak / Tinggi Gula",
+                      "actionableImprovement": "Satu langkah konkrit perbaikan porsi berikutnya",
+                      "alertnessLevel": "Stabil & Fokus / Sedang / Rawan Mengantuk",
+                      "alertnessDetail": "Penjelasan kaitan menu ini dengan stamina dan konsentrasi belajar siswa di kelas",
+                      "satietyHours": 4,
+                      "calciumStatus": "Optimal / Cukup / Perlu Ditingkatkan",
+                      "vitaminCStatus": "Optimal / Cukup / Kurang Sayur & Buah",
+                      "hydrationBeverageAdvice": "Saran minuman pendamping sehat (utamakan air putih)",
+                      "items": [
+                        {"name": "Nama komponen", "portion": "Porsi perkiraan", "calories": 150, "group": "Karbohidrat Pokok / Lauk Pauk / Sayuran / Buah / Minuman"}
+                      ]
                     }
-                    put("inlineData", inlineData)
-                })
+                """.trimIndent()
 
-                contentObj.put("parts", partsArray)
-                contentsArray.put(contentObj)
-                put("contents", contentsArray)
+                val requestJson = JSONObject().apply {
+                    val contentsArray = JSONArray()
+                    val contentObj = JSONObject()
+                    val partsArray = JSONArray()
 
-                // JSON response format and low thinking level for fast response
-                val genConfig = JSONObject().apply {
-                    put("responseMimeType", "application/json")
-                    put("thinkingConfig", JSONObject().apply {
-                        put("thinkingLevel", "low")
+                    partsArray.put(JSONObject().apply { put("text", prompt) })
+                    partsArray.put(JSONObject().apply {
+                        val inlineData = JSONObject().apply {
+                            put("mimeType", "image/jpeg")
+                            put("data", base64Image)
+                        }
+                        put("inlineData", inlineData)
                     })
-                }
-                put("generationConfig", genConfig)
 
-                // System Instruction
-                val sysInst = JSONObject().apply {
-                    val parts = JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("text", "Anda adalah NutriMind AI, asisten kecerdasan buatan skrining gizi madrasah. Berikan analisis ilmiah gizi yang akurat berdasarkan foto makanan yang diberikan, dengan bahasa Indonesia yang ramah, sopan, dan edukatif tanpa diagnosis medis.")
-                        })
+                    contentObj.put("parts", partsArray)
+                    contentsArray.put(contentObj)
+                    put("contents", contentsArray)
+
+                    val genConfig = JSONObject().apply {
+                        put("responseMimeType", "application/json")
                     }
-                    put("parts", parts)
+                    put("generationConfig", genConfig)
+
+                    val sysInst = JSONObject().apply {
+                        val parts = JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("text", "Anda adalah NutriMind AI, sistem computer vision dan asisten kecerdasan buatan skrining gizi madrasah. Kenali hidangan nyata pada foto piring dan berikan evaluasi gizi akurat ramah siswa.")
+                            })
+                        }
+                        put("parts", parts)
+                    }
+                    put("systemInstruction", sysInst)
                 }
-                put("systemInstruction", sysInst)
-            }
 
-            val mediaType = "application/json; charset=utf-8".toMediaType()
-            val requestBody = requestJson.toString().toRequestBody(mediaType)
-            val request = Request.Builder()
-                .url("$BASE_URL/$MODEL_VISION:generateContent?key=$apiKey")
-                .post(requestBody)
-                .build()
+                val mediaType = "application/json; charset=utf-8".toMediaType()
+                val requestBody = requestJson.toString().toRequestBody(mediaType)
 
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string() ?: ""
+                // Coba model multimodal terbaik: gemini-2.5-flash, lalu gemini-1.5-flash, gemini-2.0-flash, gemini-3.5-flash
+                val candidateModels = listOf("gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-3.5-flash")
+                var successfulJson: JSONObject? = null
+                var successfulModel: String? = null
 
-            if (!response.isSuccessful) {
-                android.util.Log.e("NutriMindAI", "Food analysis API error: ${response.code} $responseBody")
-                return@withContext getSampleFoodAnalysis(mealType + " " + studentNote)
-            }
+                for (modelName in candidateModels) {
+                    try {
+                        val request = Request.Builder()
+                            .url("$BASE_URL/$modelName:generateContent?key=$apiKey")
+                            .post(requestBody)
+                            .build()
 
-            val jsonResp = JSONObject(responseBody)
-            val candidates = jsonResp.optJSONArray("candidates")
-            val firstCand = candidates?.optJSONObject(0)
-            val content = firstCand?.optJSONObject("content")
-            val parts = content?.optJSONArray("parts")
+                        val response = client.newCall(request).execute()
+                        val responseBody = response.body?.string() ?: ""
 
-            var responseText = ""
-            if (parts != null) {
-                for (i in 0 until parts.length()) {
-                    val p = parts.getJSONObject(i)
-                    if (p.has("text") && !p.optBoolean("thought", false)) {
-                        responseText += p.getString("text")
+                        if (response.isSuccessful && responseBody.isNotBlank()) {
+                            val jsonResp = JSONObject(responseBody)
+                            val candidates = jsonResp.optJSONArray("candidates")
+                            val firstCand = candidates?.optJSONObject(0)
+                            val content = firstCand?.optJSONObject("content")
+                            val parts = content?.optJSONArray("parts")
+
+                            var responseText = ""
+                            if (parts != null) {
+                                for (i in 0 until parts.length()) {
+                                    val p = parts.getJSONObject(i)
+                                    if (p.has("text") && !p.optBoolean("thought", false)) {
+                                        responseText += p.getString("text")
+                                    }
+                                }
+                            }
+
+                            var cleanJson = responseText.trim()
+                            val firstBrace = cleanJson.indexOf('{')
+                            val lastBrace = cleanJson.lastIndexOf('}')
+                            if (firstBrace != -1 && lastBrace > firstBrace) {
+                                cleanJson = cleanJson.substring(firstBrace, lastBrace + 1)
+                            }
+
+                            if (cleanJson.isNotBlank()) {
+                                val parsed = JSONObject(cleanJson)
+                                successfulJson = parsed
+                                successfulModel = modelName
+                                break
+                            }
+                        } else {
+                            android.util.Log.w("NutriMindAI", "Model $modelName responded with code ${response.code}")
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("NutriMindAI", "Model $modelName attempt failed: ${e.message}")
                     }
                 }
-            }
 
-            var cleanJson = responseText.trim()
-            if (cleanJson.startsWith("```json")) {
-                cleanJson = cleanJson.removePrefix("```json").trim()
-            }
-            if (cleanJson.startsWith("```")) {
-                cleanJson = cleanJson.removePrefix("```").trim()
-            }
-            if (cleanJson.endsWith("```")) {
-                cleanJson = cleanJson.removeSuffix("```").trim()
-            }
+                if (successfulJson != null) {
+                    val parsed = successfulJson
 
-            val parsed = JSONObject(cleanJson)
-
-            // Cek jika AI merespon gambar bukan makanan atau tidak terbaca jelas
-            if ((parsed.has("detail") || parsed.has("message") || parsed.has("error")) && !parsed.has("detectedFoods")) {
-                val msg = parsed.optString("detail", parsed.optString("message", "Foto belum dapat dikenali sebagai makanan."))
-                return@withContext FoodAnalysisResponse(
-                    detectedFoods = "Belum Terdeteksi Makanan",
-                    foodCategory = "Foto Kurang Jelas / Bukan Makanan",
-                    carbsSource = "-",
-                    proteinSource = "-",
-                    vegFruitSource = "-",
-                    approxNutrients = "0 kkal",
-                    balanceAssessment = "Perlu Foto Ulang",
-                    educationalFeedback = msg,
-                    estimatedCalories = 0,
-                    carbGrams = 0,
-                    proteinGrams = 0,
-                    fatGrams = 0,
-                    fiberGrams = 0,
-                    plateScore = 0,
-                    ironAssessment = "-",
-                    ironAdvice = "Arahkan kamera ke hidangan makanan yang jelas.",
-                    oilSugarAssessment = "-",
-                    actionableImprovement = "Ambil foto makanan dengan pencahayaan terang."
-                )
-            }
-
-            fun extractString(key: String, fallback: String): String {
-                if (!parsed.has(key)) return fallback
-                val arr = parsed.optJSONArray(key)
-                if (arr != null) {
-                    val list = mutableListOf<String>()
-                    for (i in 0 until arr.length()) {
-                        list.add(arr.optString(i))
+                    fun extractString(key: String, fallback: String): String {
+                        if (!parsed.has(key)) return fallback
+                        val arr = parsed.optJSONArray(key)
+                        if (arr != null) {
+                            val list = mutableListOf<String>()
+                            for (i in 0 until arr.length()) {
+                                list.add(arr.optString(i))
+                            }
+                            return list.joinToString(", ")
+                        }
+                        val obj = parsed.optJSONObject(key)
+                        if (obj != null) {
+                            val entries = mutableListOf<String>()
+                            val keys = obj.keys()
+                            while (keys.hasNext()) {
+                                val k = keys.next()
+                                entries.add("$k: ${obj.opt(k)}")
+                            }
+                            return entries.joinToString(" | ")
+                        }
+                        val str = parsed.optString(key, fallback)
+                        return if (str.isNotBlank()) str else fallback
                     }
-                    return list.joinToString(", ")
-                }
-                val obj = parsed.optJSONObject(key)
-                if (obj != null) {
-                    val entries = mutableListOf<String>()
-                    val keys = obj.keys()
-                    while (keys.hasNext()) {
-                        val k = keys.next()
-                        entries.add("$k: ${obj.opt(k)}")
-                    }
-                    return entries.joinToString(" | ")
-                }
-                val str = parsed.optString(key, fallback)
-                return if (str.isNotBlank()) str else fallback
-            }
 
-            val estCal = parsed.optInt("estimatedCalories", 480).coerceAtLeast(0)
-            val cGrams = parsed.optInt("carbGrams", 60).coerceAtLeast(0)
-            val pGrams = parsed.optInt("proteinGrams", 20).coerceAtLeast(0)
-            val fGrams = parsed.optInt("fatGrams", 14).coerceAtLeast(0)
-            val fibGrams = parsed.optInt("fiberGrams", 5).coerceAtLeast(0)
-            val pScore = parsed.optInt("plateScore", 78).coerceIn(10, 100)
-
-            val itemsList = mutableListOf<DetectedFoodItem>()
-            val itemsJsonArray = parsed.optJSONArray("items")
-            if (itemsJsonArray != null) {
-                for (i in 0 until itemsJsonArray.length()) {
-                    val itObj = itemsJsonArray.optJSONObject(i) ?: continue
-                    val itemName = itObj.optString("name", "").trim()
-                    if (itemName.isNotBlank()) {
-                        itemsList.add(
-                            DetectedFoodItem(
-                                name = itemName,
-                                portion = itObj.optString("portion", "1 porsi"),
-                                calories = itObj.optInt("calories", 100),
-                                group = itObj.optString("group", "Komponen Piring")
-                            )
+                    val detectedFoods = extractString("detectedFoods",
+                        extractString("detected_foods",
+                            extractString("foods", "Komponen makanan teridentifikasi dari foto")
                         )
+                    )
+
+                    val estCal = parsed.optInt("estimatedCalories", 480).coerceAtLeast(100)
+                    val cGrams = parsed.optInt("carbGrams", 60).coerceAtLeast(0)
+                    val pGrams = parsed.optInt("proteinGrams", 20).coerceAtLeast(0)
+                    val fGrams = parsed.optInt("fatGrams", 14).coerceAtLeast(0)
+                    val fibGrams = parsed.optInt("fiberGrams", 5).coerceAtLeast(0)
+                    val pScore = parsed.optInt("plateScore", 78).coerceIn(10, 100)
+
+                    val itemsList = mutableListOf<DetectedFoodItem>()
+                    val itemsJsonArray = parsed.optJSONArray("items")
+                    if (itemsJsonArray != null) {
+                        for (i in 0 until itemsJsonArray.length()) {
+                            val itObj = itemsJsonArray.optJSONObject(i) ?: continue
+                            val itemName = itObj.optString("name", "").trim()
+                            if (itemName.isNotBlank()) {
+                                itemsList.add(
+                                    DetectedFoodItem(
+                                        name = itemName,
+                                        portion = itObj.optString("portion", "1 porsi"),
+                                        calories = itObj.optInt("calories", 100),
+                                        group = itObj.optString("group", "Komponen Piring")
+                                    )
+                                )
+                            }
+                        }
                     }
-                }
-            }
 
-            // If itemsList is empty from model, generate sensible items from detectedFoods
-            if (itemsList.isEmpty()) {
-                val carb = extractString("carbsSource", "")
-                if (carb.isNotBlank() && !carb.equals("Tidak ada", ignoreCase = true)) {
-                    itemsList.add(DetectedFoodItem(carb, "1 porsi", (estCal * 0.45).toInt(), "Karbohidrat Pokok"))
-                }
-                val protein = extractString("proteinSource", "")
-                if (protein.isNotBlank() && !protein.equals("Tidak ada", ignoreCase = true)) {
-                    itemsList.add(DetectedFoodItem(protein, "1 porsi", (estCal * 0.30).toInt(), "Lauk Pauk"))
-                }
-                val vegFruit = extractString("vegFruitSource", "")
-                if (vegFruit.isNotBlank() && !vegFruit.equals("Belum ada", ignoreCase = true)) {
-                    itemsList.add(DetectedFoodItem(vegFruit, "1 porsi segar", (estCal * 0.15).toInt(), "Sayur / Buah"))
-                }
-            }
+                    if (itemsList.isEmpty()) {
+                        val carb = extractString("carbsSource", "")
+                        if (carb.isNotBlank() && !carb.equals("Tidak ada", ignoreCase = true)) {
+                            itemsList.add(DetectedFoodItem(carb, "1 porsi", (estCal * 0.45).toInt(), "Karbohidrat Pokok"))
+                        }
+                        val protein = extractString("proteinSource", "")
+                        if (protein.isNotBlank() && !protein.equals("Tidak ada", ignoreCase = true)) {
+                            itemsList.add(DetectedFoodItem(protein, "1 porsi", (estCal * 0.30).toInt(), "Lauk Pauk"))
+                        }
+                        val vegFruit = extractString("vegFruitSource", "")
+                        if (vegFruit.isNotBlank() && !vegFruit.equals("Belum ada", ignoreCase = true)) {
+                            itemsList.add(DetectedFoodItem(vegFruit, "1 porsi segar", (estCal * 0.15).toInt(), "Sayur / Buah"))
+                        }
+                    }
 
-            FoodAnalysisResponse(
-                detectedFoods = extractString("detectedFoods", "Makanan terdeteksi dari foto"),
-                foodCategory = extractString("foodCategory", "Menu Makanan"),
-                carbsSource = extractString("carbsSource", "-"),
-                proteinSource = extractString("proteinSource", "-"),
-                vegFruitSource = extractString("vegFruitSource", "-"),
-                approxNutrients = extractString("approxNutrients", "Est. $estCal kkal | K: ${cGrams}g, P: ${pGrams}g, L: ${fGrams}g"),
-                balanceAssessment = extractString("balanceAssessment", "Cukup Seimbang"),
-                educationalFeedback = extractString("educationalFeedback", "Pastikan piring makanmu seimbang antara karbohidrat, lauk berprotein, sayur, dan buah."),
-                estimatedCalories = estCal,
-                carbGrams = cGrams,
-                proteinGrams = pGrams,
-                fatGrams = fGrams,
-                fiberGrams = fibGrams,
-                plateScore = pScore,
-                ironAssessment = extractString("ironAssessment", "Cukup"),
-                ironAdvice = extractString("ironAdvice", "Konsumsi makanan tinggi zat besi dan vitamin C untuk mencegah anemia serta lemas saat belajar."),
-                oilSugarAssessment = extractString("oilSugarAssessment", "Minyak Wajar"),
-                actionableImprovement = extractString("actionableImprovement", "Tambahkan porsi buah atau sayuran segar untuk melengkapi serat."),
-                studentNotes = studentNote,
-                alertnessLevel = extractString("alertnessLevel", "Stabil & Fokus"),
-                alertnessDetail = extractString("alertnessDetail", "Keseimbangan makronutrien menjaga kestabilan glukosa darah sehingga stamina belajar tetap konsisten di kelas madrasah."),
-                satietyHours = parsed.optInt("satietyHours", 4).coerceIn(1, 6),
-                calciumStatus = extractString("calciumStatus", "Cukup untuk Tulang"),
-                vitaminCStatus = extractString("vitaminCStatus", "Optimal"),
-                hydrationBeverageAdvice = extractString("hydrationBeverageAdvice", "Dampingi santapan dengan 1-2 gelas air putih (300-400ml). Hindari teh manis pekat segera setelah makan agar penyerapan zat besi tidak terganggu."),
-                items = itemsList
-            )
-        } catch (e: Exception) {
-            android.util.Log.e("NutriMindAI", "Food analysis exception", e)
-            getSampleFoodAnalysis(mealType + " " + studentNote)
+                    return@withContext FoodAnalysisResponse(
+                        detectedFoods = detectedFoods,
+                        foodCategory = extractString("foodCategory", "Menu Makanan"),
+                        carbsSource = extractString("carbsSource", "-"),
+                        proteinSource = extractString("proteinSource", "-"),
+                        vegFruitSource = extractString("vegFruitSource", "-"),
+                        approxNutrients = extractString("approxNutrients", "Est. $estCal kkal | K: ${cGrams}g, P: ${pGrams}g, L: ${fGrams}g"),
+                        balanceAssessment = extractString("balanceAssessment", "Cukup Seimbang"),
+                        educationalFeedback = extractString("educationalFeedback", "Pastikan piring makanmu seimbang antara karbohidrat, lauk berprotein, sayur, dan buah."),
+                        estimatedCalories = estCal,
+                        carbGrams = cGrams,
+                        proteinGrams = pGrams,
+                        fatGrams = fGrams,
+                        fiberGrams = fibGrams,
+                        plateScore = pScore,
+                        ironAssessment = extractString("ironAssessment", "Cukup"),
+                        ironAdvice = extractString("ironAdvice", "Konsumsi makanan tinggi zat besi dan vitamin C untuk mencegah anemia serta lemas saat belajar."),
+                        oilSugarAssessment = extractString("oilSugarAssessment", "Minyak Wajar"),
+                        actionableImprovement = extractString("actionableImprovement", "Tambahkan porsi buah atau sayuran segar untuk melengkapi serat."),
+                        studentNotes = studentNote,
+                        alertnessLevel = extractString("alertnessLevel", "Stabil & Fokus"),
+                        alertnessDetail = extractString("alertnessDetail", "Keseimbangan makronutrien menjaga kestabilan glukosa darah sehingga stamina belajar tetap konsisten di kelas madrasah."),
+                        satietyHours = parsed.optInt("satietyHours", 4).coerceIn(1, 6),
+                        calciumStatus = extractString("calciumStatus", "Cukup untuk Tulang"),
+                        vitaminCStatus = extractString("vitaminCStatus", "Optimal"),
+                        hydrationBeverageAdvice = extractString("hydrationBeverageAdvice", "Dampingi santapan dengan 1-2 gelas air putih (300-400ml)."),
+                        items = itemsList,
+                        analysisEngine = "Google Gemini AI ($successfulModel Multimodal Vision)"
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("NutriMindAI", "Gemini food analysis failed, falling back to on-device vision", e)
+            }
         }
+
+        // Fallback cerdas: On-Device Computer Vision yang menganalisis piksel foto asli
+        return@withContext FoodVisionAnalyzer.analyze(bitmap, mealType, studentNote)
     }
 
     suspend fun generateDailyAdvice(
